@@ -271,9 +271,9 @@
   }
 
   // ---------- start ----------
-  document.getElementById("brand").textContent = cfg.STORE_NAME || "Saif Outdoors";
-  document.title = cfg.STORE_NAME || "Saif Outdoors";
-  document.getElementById("footer-name").textContent = "© " + new Date().getFullYear() + " " + (cfg.STORE_NAME || "Saif Outdoors");
+  document.getElementById("brand").textContent = cfg.STORE_NAME || "Mixora Hub";
+  document.title = cfg.STORE_NAME || "Mixora Hub";
+  document.getElementById("footer-name").textContent = "© " + new Date().getFullYear() + " " + (cfg.STORE_NAME || "Mixora Hub");
   if (!configured) showNotice("Demo mode: these are sample products. Add your Supabase keys in config.js to connect the real store.");
   updateCartCount();
 
