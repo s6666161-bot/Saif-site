@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saif Outdoors</title>
+  <meta name="description" content="Camping, outdoor and garden gear delivered across Australia.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛺</text></svg>">
+</head>
+<body>
+  <header class="site-header">
+    <a href="#/" class="brand" id="brand">Saif Outdoors</a>
+    <nav class="site-nav">
+      <a href="#/">Shop</a>
+      <a href="#/account" id="account-link">Sign in</a>
+      <a href="#/cart" class="cart-link">Cart <span id="cart-count" class="cart-count">0</span></a>
+    </nav>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+  <main id="app" tabindex="-1"></main>
+
+  <footer class="site-footer">
+    <p>Delivered across Australia. Prices in AUD, GST included.</p>
+    <p id="footer-name">© Saif Outdoors</p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
