@@ -71,7 +71,7 @@
   // ---------- data ----------
   function loadProducts() {
     if (!db) { state.products = DEMO; return Promise.resolve(); }
-    return db.from("products").select("*").order("created_at").then(function (r) {
+    return db.from("products").select("*").eq("active", true).order("created_at").then(function (r) {
       if (r.error) { showNotice("Products could not load: " + r.error.message); state.products = []; }
       else state.products = r.data;
     });
@@ -239,7 +239,7 @@
 
   function pageOrders() {
     view('<div class="panel narrow" style="max-width:640px"><h2>My orders</h2><p style="color:var(--muted)">' + esc(state.user.email) +
-         ' · <button class="btn-link" id="out">Sign out</button></p><div id="orders">Loading…</div></div>');
+         ' · <button class="btn-link" id="out">Sign out</button>' + (state.isAdmin ? ' · <a href="#/admin">Open dashboard</a>' : '') + '</p><div id="orders">Loading…</div></div>');
     document.getElementById("out").onclick = function () { db.auth.signOut(); };
     db.from("orders").select("*").order("created_at", { ascending: false }).then(function (r) {
       var el = document.getElementById("orders"); if (!el) return;
@@ -253,6 +253,119 @@
     });
   }
 
+  // ---------- admin dashboard ----------
+  var STATUSES = ["pending", "paid", "shipped", "delivered", "cancelled"];
+  var adminTab = "orders";
+
+  function pageAdmin() {
+    if (!db || !state.user) { sessionStorage.setItem("after_login", "#/admin"); return go("#/account"); }
+    if (!state.isAdmin) return view('<div class="panel narrow empty"><h2>No access</h2><p>This page is for the store owner.</p><a class="btn" href="#/">Go to the shop</a></div>');
+    view(
+      '<div class="admin-head"><h2>Dashboard</h2><div class="tabs admin-tabs" role="tablist">' +
+        '<button role="tab" data-t="orders" aria-selected="' + (adminTab === "orders") + '">Orders</button>' +
+        '<button role="tab" data-t="products" aria-selected="' + (adminTab === "products") + '">Products</button></div></div>' +
+      '<div id="admin-body" class="panel">Loading…</div>'
+    );
+    app.querySelectorAll("[data-t]").forEach(function (b) { b.onclick = function () { adminTab = b.dataset.t; pageAdmin(); }; });
+    if (adminTab === "orders") adminOrders(); else adminProducts();
+  }
+
+  function adminOrders() {
+    var body = document.getElementById("admin-body");
+    db.from("orders").select("*").order("created_at", { ascending: false }).then(function (r) {
+      if (r.error) { body.innerHTML = '<div class="msg error">' + esc(r.error.message) + "</div>"; return; }
+      if (!r.data.length) { body.innerHTML = '<div class="empty"><h2>No orders yet</h2><p>New orders show up here as soon as a customer places one.</p></div>'; return; }
+      var pending = r.data.filter(function (o) { return o.status === "pending"; }).length;
+      var revenue = r.data.filter(function (o) { return o.status !== "cancelled"; }).reduce(function (s, o) { return s + Number(o.total); }, 0);
+      body.innerHTML =
+        '<div class="stats"><div><strong>' + r.data.length + '</strong><span>orders</span></div><div><strong>' + pending +
+        '</strong><span>waiting</span></div><div><strong>' + money.format(revenue) + "</strong><span>sales</span></div></div>" +
+        r.data.map(function (o) {
+          return '<div class="order admin-order"><div class="order-top"><span>Order ' + esc(o.id.slice(0, 8)) + " · " +
+            new Date(o.created_at).toLocaleString("en-AU") + "</span><span>" + money.format(o.total) + "</span></div>" +
+            "<div>" + o.items.map(function (i) { return esc(i.qty + " × " + i.name); }).join("<br>") + "</div>" +
+            '<small>' + esc(o.full_name) + " · " + esc(o.phone) + "<br>" + esc(o.address + ", " + o.city + " " + o.postcode) + "</small>" +
+            '<label class="status-pick">Status <select data-order="' + esc(o.id) + '">' +
+            STATUSES.map(function (s) { return "<option" + (s === o.status ? " selected" : "") + ">" + s + "</option>"; }).join("") +
+            "</select></label></div>";
+        }).join("");
+      body.querySelectorAll("[data-order]").forEach(function (sel) {
+        sel.onchange = function () {
+          sel.disabled = true;
+          db.from("orders").update({ status: sel.value }).eq("id", sel.dataset.order).then(function (u) {
+            sel.disabled = false;
+            if (u.error) alert("Status was not saved: " + u.error.message);
+          });
+        };
+      });
+    });
+  }
+
+  function adminProducts() {
+    var body = document.getElementById("admin-body");
+    db.from("products").select("*").order("created_at").then(function (r) {
+      if (r.error) { body.innerHTML = '<div class="msg error">' + esc(r.error.message) + "</div>"; return; }
+      body.innerHTML = '<div class="admin-bar"><span>' + r.data.length + ' products</span><button class="btn" id="new-p">Add product</button></div>' +
+        r.data.map(function (p) {
+          return '<div class="line"><div class="thumb">' + thumb(p) + "</div><div><h3>" + esc(p.name) + "</h3><small>" +
+            esc(p.category) + " · " + p.stock + " in stock" + (p.active ? "" : " · hidden") + "</small></div>" +
+            '<div class="admin-actions"><strong>' + money.format(p.price) + '</strong><button class="btn-link" data-edit="' + esc(p.id) + '">Edit</button></div></div>';
+        }).join("");
+      document.getElementById("new-p").onclick = function () { productForm(null); };
+      body.querySelectorAll("[data-edit]").forEach(function (b) {
+        b.onclick = function () { productForm(r.data.filter(function (p) { return p.id === b.dataset.edit; })[0]); };
+      });
+    });
+  }
+
+  function productForm(p) {
+    var isNew = !p; p = p || { name: "", category: "Camping", price: "", stock: 0, description: "", image_url: "", active: true };
+    var body = document.getElementById("admin-body");
+    body.innerHTML =
+      '<h2 style="margin-bottom:20px">' + (isNew ? "Add product" : "Edit product") + '</h2><div id="perr"></div><form id="pf">' +
+      '<div class="field"><label for="f-name">Name</label><input id="f-name" required value="' + esc(p.name) + '"></div>' +
+      '<div class="row-2"><div class="field"><label for="f-cat">Category</label><input id="f-cat" required list="cats" value="' + esc(p.category) + '">' +
+      '<datalist id="cats"><option>Camping</option><option>Outdoor</option><option>Garden</option></datalist></div>' +
+      '<div class="field"><label for="f-price">Price (AUD)</label><input id="f-price" required type="number" min="0" step="0.01" value="' + esc(p.price) + '"></div></div>' +
+      '<div class="row-2"><div class="field"><label for="f-stock">Stock</label><input id="f-stock" required type="number" min="0" step="1" value="' + esc(p.stock) + '"></div>' +
+      '<div class="field"><label class="check"><input id="f-active" type="checkbox"' + (p.active ? " checked" : "") + "> Show in the shop</label></div></div>" +
+      '<div class="field"><label for="f-desc">Description</label><textarea id="f-desc" rows="4">' + esc(p.description) + "</textarea></div>" +
+      '<div class="field"><label for="f-img">Photo</label>' + (p.image_url ? '<img src="' + esc(p.image_url) + '" alt="" class="preview">' : "") +
+      '<input id="f-img" type="file" accept="image/*"></div>' +
+      '<div class="buy-row"><button class="btn" id="psave">' + (isNew ? "Add product" : "Save changes") + '</button>' +
+      '<button type="button" class="btn btn-quiet" id="pcancel">Cancel</button>' +
+      (isNew ? "" : '<button type="button" class="btn-link danger" id="pdel">Delete product</button>') + "</div></form>";
+    document.getElementById("pcancel").onclick = adminProducts;
+    if (!isNew) document.getElementById("pdel").onclick = function () {
+      if (!confirm("Delete " + p.name + "? This cannot be undone. To hide it instead, untick Show in the shop.")) return;
+      db.from("products").delete().eq("id", p.id).then(function (r) {
+        if (r.error) document.getElementById("perr").innerHTML = '<div class="msg error">' + esc(r.error.message) + "</div>"; else adminProducts();
+      });
+    };
+    document.getElementById("pf").onsubmit = function (e) {
+      e.preventDefault();
+      var btn = document.getElementById("psave"); btn.disabled = true; btn.textContent = "Saving…";
+      var file = document.getElementById("f-img").files[0];
+      var fail = function (m) { document.getElementById("perr").innerHTML = '<div class="msg error">' + esc(m) + "</div>"; btn.disabled = false; btn.textContent = isNew ? "Add product" : "Save changes"; };
+      var upload = file
+        ? db.storage.from("product-images").upload(Date.now() + "-" + file.name.replace(/[^a-zA-Z0-9.]/g, "_"), file).then(function (u) {
+            if (u.error) throw new Error("Photo upload failed: " + u.error.message);
+            return db.storage.from("product-images").getPublicUrl(u.data.path).data.publicUrl;
+          })
+        : Promise.resolve(p.image_url || null);
+      upload.then(function (url) {
+        var row = {
+          name: val("f-name"), category: val("f-cat"), price: Number(val("f-price")), stock: parseInt(val("f-stock"), 10) || 0,
+          description: val("f-desc"), active: document.getElementById("f-active").checked, image_url: url
+        };
+        return isNew ? db.from("products").insert(row) : db.from("products").update(row).eq("id", p.id);
+      }).then(function (r) {
+        if (r.error) return fail(r.error.message);
+        loadProducts(); adminProducts();
+      }).catch(function (err) { fail(err.message); });
+    };
+  }
+
   // ---------- router ----------
   function go(hash) { location.hash = hash; }
   function route() {
@@ -263,11 +376,19 @@
     if (h === "#/cart") return pageCart();
     if (h === "#/checkout") return pageCheckout();
     if (h === "#/account") return pageAccount();
+    if (h === "#/admin") return pageAdmin();
     pageHome();
   }
   function setUser(u) {
     state.user = u;
     document.getElementById("account-link").textContent = u ? "My account" : "Sign in";
+    state.isAdmin = false;
+    document.getElementById("admin-link").hidden = true;
+    if (!u || !db) return Promise.resolve();
+    return db.from("admins").select("user_id").eq("user_id", u.id).maybeSingle().then(function (r) {
+      state.isAdmin = !!(r.data && !r.error);
+      document.getElementById("admin-link").hidden = !state.isAdmin;
+    });
   }
 
   // ---------- start ----------
@@ -277,16 +398,17 @@
   if (!configured) showNotice("Demo mode: these are sample products. Add your Supabase keys in config.js to connect the real store.");
   updateCartCount();
 
-  var ready = db ? db.auth.getSession().then(function (r) { setUser(r.data.session ? r.data.session.user : null); }) : Promise.resolve();
+  var ready = db ? db.auth.getSession().then(function (r) { return setUser(r.data.session ? r.data.session.user : null); }) : Promise.resolve();
   ready.then(loadProducts).then(function () {
     window.addEventListener("hashchange", route);
     route();
     if (db) db.auth.onAuthStateChange(function (_e, session) {
-      var was = !!state.user; setUser(session ? session.user : null);
-      if (was !== !!state.user) {
+      var was = !!state.user;
+      if (was === !!session) return;
+      setUser(session ? session.user : null).then(function () {
         var next = sessionStorage.getItem("after_login");
         if (state.user && next) { sessionStorage.removeItem("after_login"); go(next); } else route();
-      }
+      });
     });
   });
 })();
